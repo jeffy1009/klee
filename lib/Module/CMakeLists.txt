@@ -43,6 +43,10 @@ llvm_config(kleeModule "${USE_LLVM_SHARED}"
   binaryformat
   )
 
+if ("${LLVM_VERSION_MAJOR}" GREATER_EQUAL 16)
+  llvm_config(kleeModule "${USE_LLVM_SHARED}" targetparser)
+endif()
+
 target_link_libraries(kleeModule PRIVATE
   kleeSupport
 )

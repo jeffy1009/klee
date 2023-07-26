@@ -31,6 +31,10 @@ foreach (bc_architecture ${bc_architectures})
             list(APPEND local_flags -m32)
         endif ()
 
+	# Opaque pointer is not the default for llvm-15. Don't generate it.
+	if ("${LLVM_VERSION_MAJOR}" EQUAL 15)
+	  list(APPEND local_flags -Xclang -no-opaque-pointers)
+	endif()
 
         # Set specific compiler flags depending on the optimization
         if (bc_optimization STREQUAL "Release")

@@ -2456,6 +2456,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     }
 
     if (f) {
+#if LLVM_VERSION_MAJOR < 16
       const FunctionType *fType = f->getFunctionType();
       const FunctionType *fpType =
           dyn_cast<FunctionType>(fp->getType()->getPointerElementType());
@@ -2490,7 +2491,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
           i++;
         }
       }
-
+#endif
       executeCall(state, ki, f, arguments);
     } else {
       ref<Expr> v = eval(ki, 0, state).value;
@@ -3405,7 +3406,31 @@ void Executor::computeOffsets(KGEPInstruction *kgepi, TypeIt ib, TypeIt ie) {
 void Executor::bindInstructionConstants(KInstruction *KI) {
   if (GetElementPtrInst *gepi = dyn_cast<GetElementPtrInst>(KI->inst)) {
     KGEPInstruction *kgepi = static_cast<KGEPInstruction *>(KI);
+
+#if LLVM_VERSION_MAJOR < 16
     computeOffsets(kgepi, gep_type_begin(gepi), gep_type_end(gepi));
+#else
+    DataLayout &DL = *kmodule->targetData;
+    unsigned BitWidth = DL.getIndexTypeSizeInBits(gepi->getType());
+    MapVector<Value *, APInt> VariableOffsets;
+    APInt ConstantOffset(BitWidth, 0);
+    gepi->collectOffset(DL, BitWidth, VariableOffsets, ConstantOffset);
+    for (auto &VO: VariableOffsets) {
+      uint64_t index = 1;
+      for (Value *Index: gepi->indices()) {
+        if (VO.first == Index) {
+          // auto it = std::find_if(kgepi->indices.begin(), kgepi->indices.end(),
+          //                        [&index](auto &i){return i.first==index;});
+          // assert(it != kgepi->indices.end());
+          // assert(it->second==VO.second.getZExtValue());
+          kgepi->indices.emplace_back(index, VO.second.getZExtValue());
+        }
+        index++;
+      }
+    }
+    // assert(ConstantOffset==kgepi->offset);
+    kgepi->offset = ConstantOffset.getZExtValue();
+#endif
   } else if (InsertValueInst *ivi = dyn_cast<InsertValueInst>(KI->inst)) {
     KGEPInstruction *kgepi = static_cast<KGEPInstruction *>(KI);
     computeOffsets(kgepi, iv_type_begin(ivi), iv_type_end(ivi));
@@ -4771,7 +4796,7 @@ size_t Executor::getAllocationAlignment(const llvm::Value *allocSite) const {
       type = GO->getType();
     }
   } else if (const AllocaInst *AI = dyn_cast<AllocaInst>(allocSite)) {
-    alignment = AI->getAlignment();
+    alignment = AI->getAlign().value();
     type = AI->getAllocatedType();
   } else if (isa<InvokeInst>(allocSite) || isa<CallInst>(allocSite)) {
     // FIXME: Model the semantics of the call to use the right alignment

@@ -92,7 +92,11 @@ bool RaiseAsmPass::runOnModule(Module &M) {
     TLI = 0;
   } else {
     TM = Target->createTargetMachine(TargetTriple, "", "", TargetOptions(),
+#if LLVM_VERSION_CODE >= LLVM_VERSION(16, 0)
+                                     std::nullopt);
+#else
                                      None);
+#endif
     TLI = TM->getSubtargetImpl(*(M.begin()))->getTargetLowering();
 
     triple = llvm::Triple(TargetTriple);
